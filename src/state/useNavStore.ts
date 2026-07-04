@@ -2,95 +2,71 @@ import { create } from 'zustand'
 import { PORTFOLIO } from '../data/portfolio'
 
 /**
- * Navigation state machine for recursive zoom-dive:
+ * Discrete navigation state. Continuous motion (zoom progress) lives in
+ * navMotion; this store tracks where we are and what is selected.
  *
- *  boot ─▶ forming ─▶ idle ──dive(child)──▶ diving ──(camera arrives,
- *                      ▲  ▲                            re-root on child)──▶ idle
- *                      │  └── surfacing ◀──surface()───┘ (re-roots on parent
- *                      └──────(camera pulls back)         immediately)
+ *  boot ─▶ forming ─▶ explore
  *
- * `path` holds node ids from the portfolio root down to the current root.
+ * In explore, `path` changes only at the seamless swap points:
+ * descend() when a dive completes, ascend() when surfacing begins.
  */
-export type Phase = 'boot' | 'forming' | 'idle' | 'diving' | 'surfacing'
+export type Phase = 'boot' | 'forming' | 'explore'
 
 interface NavState {
   phase: Phase
   path: string[]
-  /** child id the camera is flying into */
-  divingTo: string | null
-  /** child id the camera is pulling back out of */
-  surfacedFrom: string | null
+  /** click-selected node (child id) or portal key ('portal:<branchId>') */
+  selectedId: string | null
   hoveredChild: string | null
-  /** breadcrumb multi-level jump target (depth index), chained one level at a time */
-  surfaceTarget: number | null
+  /** travel controller is flying a multi-hop journey */
+  traveling: boolean
 
   beginForm: () => void
   finishForm: () => void
   setHoveredChild: (id: string | null) => void
-  dive: (childId: string) => void
-  finishDive: () => void
-  surface: () => void
-  finishSurface: () => void
-  surfaceTo: (depth: number) => void
+  select: (id: string) => void
+  deselect: () => void
+  /** re-root one level down (called by the frame loop at the swap point) */
+  descend: (childId: string) => void
+  /** re-root one level up; returns the child we were in, or null at root */
+  ascend: () => string | null
 }
 
 export const useNavStore = create<NavState>((set, get) => ({
   phase: 'boot',
   path: [PORTFOLIO.id],
-  divingTo: null,
-  surfacedFrom: null,
+  selectedId: null,
   hoveredChild: null,
-  surfaceTarget: null,
+  traveling: false,
 
   beginForm: () => {
     if (get().phase === 'boot') set({ phase: 'forming' })
   },
 
   finishForm: () => {
-    if (get().phase === 'forming') set({ phase: 'idle' })
+    if (get().phase === 'forming') set({ phase: 'explore' })
   },
 
   setHoveredChild: (hoveredChild) => set({ hoveredChild }),
 
-  dive: (childId) => {
-    if (get().phase !== 'idle') return
-    set({ phase: 'diving', divingTo: childId, hoveredChild: null })
+  select: (id) => {
+    if (get().phase === 'explore') set({ selectedId: id })
   },
 
-  /** called by the camera rig the moment the flight ends — re-roots the scene */
-  finishDive: () => {
-    const { phase, divingTo, path } = get()
-    if (phase !== 'diving' || !divingTo) return
-    set({ phase: 'idle', path: [...path, divingTo], divingTo: null })
-  },
+  deselect: () => set({ selectedId: null }),
 
-  surface: () => {
-    const { phase, path } = get()
-    if (phase !== 'idle' || path.length <= 1) return
-    // re-root on the parent immediately; the camera starts inside the
-    // child (now a mini-brain again) and pulls back out
-    set({
-      phase: 'surfacing',
-      path: path.slice(0, -1),
-      surfacedFrom: path[path.length - 1],
+  descend: (childId) =>
+    set((s) => ({
+      path: [...s.path, childId],
+      selectedId: null,
       hoveredChild: null,
-    })
-  },
+    })),
 
-  finishSurface: () => {
-    const { phase, surfaceTarget, path } = get()
-    if (phase !== 'surfacing') return
-    set({ phase: 'idle', surfacedFrom: null })
-    if (surfaceTarget !== null) {
-      if (path.length - 1 > surfaceTarget) get().surface()
-      else set({ surfaceTarget: null })
-    }
-  },
-
-  surfaceTo: (depth) => {
-    const { phase, path } = get()
-    if (phase !== 'idle' || depth >= path.length - 1 || depth < 0) return
-    set({ surfaceTarget: depth })
-    get().surface()
+  ascend: () => {
+    const { path } = get()
+    if (path.length <= 1) return null
+    const popped = path[path.length - 1]
+    set({ path: path.slice(0, -1), selectedId: null, hoveredChild: null })
+    return popped
   },
 }))

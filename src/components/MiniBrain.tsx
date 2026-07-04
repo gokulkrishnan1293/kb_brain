@@ -9,6 +9,10 @@ import { SharedUniforms, createShellControls } from '../three/uniforms'
 import { BrainShell, ShellBuffers } from './BrainShell'
 import { QUALITY } from '../config'
 import { useNavStore } from '../state/useNavStore'
+import { navMotion } from '../state/navMotion'
+import { diveInto } from '../lib/travel'
+
+export type SelectionRole = 'none' | 'selected' | 'linked' | 'dim'
 
 interface Props {
   node: PortfolioNode
@@ -16,19 +20,17 @@ interface Props {
   layout: ChildLayout
   buffers: ShellBuffers
   shared: SharedUniforms
-  /** delay before this mini fades in (staggered entrances) */
   appearDelay: number
-  /** true while another sibling is being dived into */
-  dimmed: boolean
-  /** true while the camera is flying into this mini */
-  target: boolean
+  selection: SelectionRole
   interactive: boolean
 }
 
+const ss = THREE.MathUtils.smoothstep
+
 /**
- * A child node rendered as a miniature brain floating inside its
- * parent — same shared particle buffers at a reduced drawRange, tinted
- * with the node's brand colour. Click to dive in.
+ * A child node as a miniature brain. Click = select (lights up its
+ * linkage), double-click = dive, scroll toward it = continuous dive.
+ * All fading is composed per-frame: entrance × zoom-dim × selection.
  */
 export function MiniBrain({
   node,
@@ -37,16 +39,18 @@ export function MiniBrain({
   buffers,
   shared,
   appearDelay,
-  dimmed,
-  target,
+  selection,
   interactive,
 }: Props) {
   const group = useRef<THREE.Group>(null!)
   const labelFade = useRef<HTMLDivElement>(null)
   const worldPos = useMemo(() => new THREE.Vector3(), [])
   const bobAmp = useRef(0)
+  const selMix = useRef(1)
   const gl = useThree((s) => s.gl)
-  const dive = useNavStore((s) => s.dive)
+
+  const select = useNavStore((s) => s.select)
+  const deselect = useNavStore((s) => s.deselect)
   const setHoveredChild = useNavStore((s) => s.setHoveredChild)
   const hovered = useNavStore((s) => s.hoveredChild === node.id)
 
@@ -61,7 +65,7 @@ export function MiniBrain({
     [node.color, layout.scale],
   )
 
-  // capture the mount-time delay; later re-renders must not re-trigger it
+  const entrance = useMemo(() => ({ value: 0 }), [])
   const mountDelay = useRef(appearDelay)
 
   /* staggered entrance */
@@ -69,8 +73,7 @@ export function MiniBrain({
     const g = group.current
     const delay = mountDelay.current
     g.scale.setScalar(layout.scale * 0.55)
-    gsap.to(controls.uFade, { value: 1, duration: 0.9, delay, ease: 'power2.out' })
-    gsap.to(controls.uLineOpacity, { value: 0.1, duration: 0.9, delay: delay + 0.25 })
+    gsap.to(entrance, { value: 1, duration: 0.9, delay, ease: 'power2.out' })
     gsap.to(g.scale, {
       x: layout.scale,
       y: layout.scale,
@@ -80,38 +83,22 @@ export function MiniBrain({
       ease: 'back.out(1.3)',
     })
     return () => {
-      gsap.killTweensOf([controls.uFade, controls.uLineOpacity, g.scale])
+      gsap.killTweensOf([entrance, g.scale])
     }
-  }, [controls, layout.scale])
+  }, [entrance, layout.scale])
 
-  /* dim while a sibling is entered; brighten when hovered or targeted */
-  useEffect(() => {
-    gsap.to(controls.uFade, {
-      value: dimmed ? 0.04 : 1,
-      duration: 0.7,
-      ease: 'power2.inOut',
-      overwrite: 'auto',
-    })
-    gsap.to(controls.uLineOpacity, {
-      value: dimmed ? 0 : 0.1,
-      duration: 0.7,
-      overwrite: 'auto',
-    })
-  }, [dimmed, controls])
-
-  useEffect(() => {
-    // resting glow keeps minis legible through the parent shell
-    gsap.to(controls.uFocus, {
-      value: hovered || target ? 1 : 0.25,
-      duration: 0.6,
-      overwrite: 'auto',
-    })
-  }, [hovered, target, controls])
-
-  /* gentle bob — damped to zero during dives so the camera swap is exact */
   useFrame((state, dt) => {
     const t = state.clock.elapsedTime
-    bobAmp.current = THREE.MathUtils.damp(bobAmp.current, interactive ? 1 : 0, 3, dt)
+    const z = navMotion.eased
+    const isTarget = navMotion.targetId === node.id
+
+    /* gentle bob, held still while zoom is in play */
+    bobAmp.current = THREE.MathUtils.damp(
+      bobAmp.current,
+      interactive && navMotion.zoom < 0.08 ? 1 : 0,
+      3,
+      dt,
+    )
     const g = group.current
     g.position.set(
       layout.position[0],
@@ -119,16 +106,36 @@ export function MiniBrain({
       layout.position[2],
     )
 
-    // as the brain rotates, labels of minis swinging behind it recede
+    /* composed fade: entrance × zoom-dim (non-targets recede) × selection */
+    const dimZ = isTarget ? 1 : 1 - ss(z, 0.12, 0.5)
+    selMix.current = THREE.MathUtils.damp(
+      selMix.current,
+      selection === 'dim' ? 0.15 : 1,
+      5,
+      dt,
+    )
+    controls.uFade.value = entrance.value * dimZ * selMix.current
+    controls.uLineOpacity.value = 0.1 * entrance.value * dimZ * selMix.current
+
+    const focusTarget =
+      hovered || isTarget || selection === 'selected'
+        ? 1
+        : selection === 'linked'
+          ? 0.6
+          : 0.25
+    controls.uFocus.value = THREE.MathUtils.damp(controls.uFocus.value, focusTarget, 5, dt)
+
+    /* label: recede behind the brain, vanish while diving or when dimmed */
     if (labelFade.current) {
       g.getWorldPosition(worldPos)
-      const depthFade =
-        0.15 + 0.85 * THREE.MathUtils.smoothstep(worldPos.z, -0.4, 0.1)
-      labelFade.current.style.opacity = String(depthFade)
+      const depthFade = 0.15 + 0.85 * ss(worldPos.z, -0.4, 0.1)
+      const zoomFade = 1 - ss(z, 0.18, 0.42)
+      const selFade = selection === 'dim' ? 0 : 1
+      labelFade.current.style.opacity = String(depthFade * zoomFade * selFade)
     }
   })
 
-  const labelVisible = interactive && !dimmed
+  const labelVisible = interactive
 
   return (
     <group ref={group} position={layout.position}>
@@ -147,15 +154,21 @@ export function MiniBrain({
         <meshBasicMaterial color={node.color} toneMapped={false} transparent opacity={0.9} />
       </mesh>
 
-      {/* hit target */}
+      {/* hit target — click selects, double-click dives */}
       <mesh
         // never pass undefined here — R3F would overwrite the method with it
-        raycast={interactive && !dimmed ? THREE.Mesh.prototype.raycast : () => null}
+        raycast={interactive ? THREE.Mesh.prototype.raycast : () => null}
         onClick={(e) => {
           e.stopPropagation()
           if (e.delta > 6) return // that was a drag, not a click
+          if (selection === 'selected') deselect()
+          else select(node.id)
+        }}
+        onDoubleClick={(e) => {
+          e.stopPropagation()
+          if (e.delta > 6) return
           gl.domElement.style.cursor = 'auto'
-          dive(node.id)
+          diveInto(node.id)
         }}
         onPointerOver={(e) => {
           e.stopPropagation()
@@ -164,9 +177,11 @@ export function MiniBrain({
         }}
         onPointerOut={() => {
           setHoveredChild(null)
-          const p = useNavStore.getState().phase
+          const s = useNavStore.getState()
           gl.domElement.style.cursor =
-            p === 'idle' || p === 'forming' ? 'grab' : 'auto'
+            (s.phase === 'explore' || s.phase === 'forming') && !s.traveling
+              ? 'grab'
+              : 'auto'
         }}
       >
         <sphereGeometry args={[1.05, 12, 12]} />
@@ -183,7 +198,7 @@ export function MiniBrain({
         <div ref={labelFade}>
           <div
             className={`mini-label ${labelVisible ? 'visible' : ''} ${
-              hovered || target ? 'hot' : ''
+              hovered || selection === 'selected' ? 'hot' : ''
             }`}
           >
             <span className="mini-name" style={{ color: node.color }}>
