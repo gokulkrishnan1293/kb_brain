@@ -14,6 +14,11 @@ export interface BrainSamples {
   seeds: Float32Array
   /** -1 left hemisphere, +1 right — drives the split animation */
   sides: Float32Array
+  /** far scattered start positions for the dust → form intro */
+  scatters: Float32Array
+  /** geometry bounds — drives the stem-up assembly stagger */
+  minY: number
+  yRange: number
 }
 
 const paletteWeighted = [
@@ -51,6 +56,7 @@ export function sampleBrainSurface(
   const sizes = new Float32Array(count)
   const seeds = new Float32Array(count)
   const sides = new Float32Array(count)
+  const scatters = new Float32Array(count * 3)
 
   const p = new THREE.Vector3()
   const c = new THREE.Color()
@@ -78,10 +84,32 @@ export function sampleBrainSurface(
 
     seeds[i] = Math.random()
     sides[i] = p.x >= 0 ? 1 : -1
+
+    // scattered nebula start position (dust → form intro)
+    const theta = Math.random() * Math.PI * 2
+    const cosPhi = Math.random() * 2 - 1
+    const sinPhi = Math.sqrt(1 - cosPhi * cosPhi)
+    const r = 2.4 + Math.pow(Math.random(), 0.7) * 2.4
+    scatters[i * 3] = Math.cos(theta) * sinPhi * r
+    scatters[i * 3 + 1] = cosPhi * r
+    scatters[i * 3 + 2] = Math.sin(theta) * sinPhi * r
   }
 
   mesh.material.dispose()
-  return { count, positions, colors, sizes, seeds, sides }
+
+  geometry.computeBoundingBox()
+  const box = geometry.boundingBox!
+  return {
+    count,
+    positions,
+    colors,
+    sizes,
+    seeds,
+    sides,
+    scatters,
+    minY: box.min.y,
+    yRange: Math.max(box.max.y - box.min.y, 1e-3),
+  }
 }
 
 /**

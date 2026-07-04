@@ -3,29 +3,30 @@ import { useFrame } from '@react-three/fiber'
 import { EffectComposer, Bloom, Vignette } from '@react-three/postprocessing'
 import { BloomEffect } from 'postprocessing'
 import * as THREE from 'three'
-import { useBrainStore } from '../state/useBrainStore'
+import { useNavStore } from '../state/useNavStore'
 
 /**
  * Post pipeline: mipmap bloom (the whole holographic look leans on it)
- * plus a soft vignette. Bloom intensity breathes in idle, lifts on
- * hover and when the knowledge core is open.
+ * plus a soft vignette. Bloom breathes in idle, sparkles while the dust
+ * assembles and lifts slightly during dives.
  */
 export function Effects() {
   const bloom = useRef<BloomEffect>(null!)
-  const level = useRef(0)
+  const level = useRef(1.3)
 
   useFrame((state, dt) => {
     if (!bloom.current) return
-    const { stage, hovered } = useBrainStore.getState()
+    const { phase, hoveredChild } = useNavStore.getState()
     const t = state.clock.elapsedTime
 
-    let target = 1.05
-    if (hovered && stage === 'idle') target = 1.4 // Stage 4 — glow up
-    if (stage === 'opening' || stage === 'open') target = 1.35
-    if (stage === 'cluster') target = 1.25
+    let target = 0.95
+    if (phase === 'forming') target = 1.3
+    else if (phase === 'diving') target = 1.3
+    else if (phase === 'surfacing') target = 1.2
+    else if (hoveredChild) target = 1.25
 
     level.current = THREE.MathUtils.damp(level.current, target, 3, dt)
-    // Stage 3 — gentle bloom pulse
+    // gentle idle bloom pulse
     bloom.current.intensity = level.current + Math.sin(t * 0.65) * 0.11
   })
 
@@ -35,7 +36,7 @@ export function Effects() {
         // upstream ref typing expects the class itself; the instance is what we get
         ref={bloom as unknown as React.RefObject<typeof BloomEffect>}
         mipmapBlur
-        intensity={1.05}
+        intensity={1.3}
         luminanceThreshold={0.08}
         luminanceSmoothing={0.35}
         radius={0.85}

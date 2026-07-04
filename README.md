@@ -1,8 +1,9 @@
 # Neural Knowledge Core
 
-A premium enterprise hero animation that transforms a static 3D brain mesh
-into a living AI knowledge platform — glowing particles, a travelling
-neural network, an openable knowledge core and cinematic zoom navigation.
+A premium enterprise hero animation that turns a static 3D brain mesh into a
+recursively explorable **portfolio brain**: the root brain assembles from
+dust, mini-brains (programs / applications) float inside it, and you dive
+through the shell into any of them — brains within brains, unlimited depth.
 
 Built with **React Three Fiber**, **Three.js**, **drei**, **GSAP** and
 custom GLSL shaders.
@@ -15,60 +16,73 @@ npm run dev      # http://localhost:5173
 npm run build    # production build in dist/
 ```
 
-## Interaction flow
+## Experience flow
 
-| Stage | Trigger | What happens |
-| --- | --- | --- |
-| Idle | — | ±3° sway, breathing scale, particle float, pulsing connections, travelling light packets, bloom pulse |
-| Hover | mouse over brain | glow, particle brightness/speed and line intensity rise; camera eases closer |
-| Open | click brain | hemispheres slide apart over 1.5 s (GSAP), revealing the AI core |
-| Core | — | six holographic knowledge clusters (Memory, Projects, Documents, AI Agents, Skills, Workflows) orbit the core, wired to it with animated neural pathways |
-| Cluster | click a cluster | camera flies in; the blob unfolds into a knowledge tree: cluster → sub-clusters → documents → individual nodes |
-| Back | Esc / empty click / buttons | steps back one level |
+| Moment | What happens |
+| --- | --- |
+| Load | scattered nebula dust assembles into the brain, stem-up, connections then light packets come online |
+| Idle | ±3° sway, breathing, particle float, pulsing connections, packets, bloom pulse; mini-brains glow inside with dependency traffic between them |
+| Hover a mini-brain | it brightens, label lights up |
+| Click a mini-brain | camera dives through the parent shell (which parts slightly and fades like a veil); the mini seamlessly becomes the new full-size brain |
+| Repeat | every level is another brain — depth is unlimited |
+| Esc / empty click / breadcrumb / Surface button | pulls back out one level (breadcrumb jumps multiple) |
+
+## How the infinite zoom works (scale-and-swap)
+
+Diving flies the camera to `childPosition + childScale × idlePose`. At that
+point the mini-brain fills the frame *exactly* as a full-size brain does from
+the idle pose, so the scene re-roots on the child and the camera snaps to the
+idle pose — visually seamless. Only two levels (current root + its children)
+ever render, so performance is flat at any depth, and floating-point
+precision never degrades.
+
+All mini-brains share the root's GPU buffers: each one is a `BufferGeometry`
+referencing the **same attribute arrays** with a smaller `drawRange` —
+free LOD, no extra memory.
 
 ## Architecture
 
 ```
 src/
-├─ config.ts                  palette, quality tiers, cluster layout, camera poses
-├─ state/useBrainStore.ts     zustand stage machine (idle → opening → open → cluster)
+├─ config.ts                  palette, quality tiers, camera poses
+├─ data/portfolio.ts          the knowledge hierarchy (swap in real data here)
+├─ state/useNavStore.ts       zustand nav machine (boot→forming→idle⇄diving/surfacing)
 ├─ lib/
-│  ├─ sampleSurface.ts        MeshSurfaceSampler → ~180k particle attributes
+│  ├─ sampleSurface.ts        MeshSurfaceSampler → particle attrs + scatter positions
 │  ├─ buildGraph.ts           hub selection + kNN via spatial hash; light packets
-│  └─ hierarchy.ts            blob ⇄ knowledge-tree layouts, AI core sphere
+│  ├─ layout.ts               deterministic placement of children inside the parent
+│  └─ coreParticles.ts        fibonacci-sphere node cores
 ├─ three/
-│  ├─ noise.glsl.ts           GPU simplex noise + shared hemisphere-split GLSL
+│  ├─ noise.glsl.ts           GPU simplex noise + hemisphere-split GLSL
 │  ├─ shaders.ts              all vertex/fragment shaders
-│  └─ uniforms.ts             uniforms shared across every brain material
+│  └─ uniforms.ts             shared uniforms + per-shell animation controls
 ├─ components/
-│  ├─ Scene.tsx               Canvas, adaptive DPR, pointer-missed navigation
-│  ├─ BrainAssembly.tsx       data pipeline, idle motion, split timeline, hit mesh
-│  ├─ ParticleBrain.tsx       Stage 1 — 1 draw call, all motion in vertex shader
-│  ├─ NeuralNetwork.tsx       Stage 2 — glowing edges + travelling packets
-│  ├─ CoreScene.tsx           Stage 6 — AI core, pathways, cluster ring
-│  ├─ KnowledgeCluster.tsx    Stage 6/7 — blob → tree morph, labels, hit target
-│  ├─ CameraRig.tsx           GSAP camera flights + damped pointer parallax
-│  ├─ Effects.tsx             mipmap bloom (animated) + vignette
+│  ├─ Scene.tsx               Canvas, adaptive DPR, pointer-missed = surface
+│  ├─ BrainVerse.tsx          recursive orchestrator: data pipeline, phase GSAP
+│  ├─ BrainShell.tsx          one brain rendering unit (points + lines + packets)
+│  ├─ MiniBrain.tsx           child node: shared buffers at reduced drawRange
+│  ├─ NodeCore.tsx            glowing heart of the current brain
+│  ├─ DependencyLinks.tsx     neural traffic between sibling mini-brains
+│  ├─ CameraRig.tsx           GSAP dive/surface flights + scale-and-swap maths
+│  ├─ Effects.tsx             animated mipmap bloom + vignette
 │  └─ AmbientDust.tsx         distant depth-cue dust
-└─ ui/Overlay.tsx             loading screen, HUD, breadcrumb, back navigation
+└─ ui/Overlay.tsx             loading, HUD, clickable breadcrumb, node card
 ```
 
 ### Performance notes
 
-- The brain is **one `<points>` draw call**; float noise, brightness pulse,
-  hover response and the hemisphere split all run in the vertex shader —
-  no per-frame attribute uploads.
-- The neural graph is built once with a spatial hash grid (O(n)); edges and
-  packets are two more draw calls driven by the same shared uniforms.
-- Particle counts, DPR and cluster density adapt to
-  `navigator.hardwareConcurrency`; drei's `AdaptiveDpr` degrades resolution
-  under load. Hard ceiling ~250k particles.
-- Additive blending with `depthWrite: false`, no antialiasing (bloom
-  smooths), `powerPreference: 'high-performance'`.
+- The root brain is **one `<points>` draw call** (~180k particles); dust
+  assembly, noise float, pulse, tint and dive-fade all run in the vertex
+  shader — no per-frame attribute uploads.
+- Particles right in front of the camera fade out (near-veil), so flying
+  through a shell feels like passing mist instead of hitting a wall.
+- Counts and DPR adapt to `navigator.hardwareConcurrency`; drei's
+  `AdaptiveDpr` degrades resolution under load.
+- Additive blending, `depthWrite: false`, no MSAA (bloom smooths).
 
-### Swapping the model
+### Plugging in your data
 
-Drop any mesh at `public/models/brain.glb` — geometry is normalised
-(centered + scaled) at load, and particles/graph are resampled from
-whatever surface it finds. Palette and cluster definitions live in
-`src/config.ts`.
+Edit `src/data/portfolio.ts` — any tree of `{ id, name, detail, color,
+children, dependencies }` works. Node `dependencies` (sibling ids) render as
+animated neural pathways. The model is swappable too: drop any mesh at
+`public/models/brain.glb`; it is normalised and resampled at load.
