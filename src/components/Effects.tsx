@@ -4,6 +4,7 @@ import { EffectComposer, Bloom, Vignette } from '@react-three/postprocessing'
 import { BloomEffect } from 'postprocessing'
 import * as THREE from 'three'
 import { useNavStore } from '../state/useNavStore'
+import { navMotion } from '../state/navMotion'
 
 /**
  * Post pipeline: mipmap bloom (the whole holographic look leans on it)
@@ -21,9 +22,7 @@ export function Effects() {
 
     let target = 0.95
     if (phase === 'forming') target = 1.3
-    else if (phase === 'diving') target = 1.3
-    else if (phase === 'surfacing') target = 1.2
-    else if (hoveredChild) target = 1.25
+    else target = 0.95 + navMotion.eased * 0.35 + (hoveredChild ? 0.2 : 0)
 
     level.current = THREE.MathUtils.damp(level.current, target, 3, dt)
     // gentle idle bloom pulse

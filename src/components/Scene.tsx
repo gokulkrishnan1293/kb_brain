@@ -26,9 +26,9 @@ export function Scene() {
         position: [...CAMERA.formingStart.pos],
       }}
       onPointerMissed={() => {
-        // click on empty space surfaces one level — but not after a drag
+        // empty space only clears the selection — navigation is always deliberate
         if (brainPose.lastDragTravel > 6) return
-        useNavStore.getState().surface()
+        useNavStore.getState().deselect()
       }}
     >
       <color attach="background" args={[COLORS.background]} />

@@ -21,12 +21,24 @@ npm run build    # production build in dist/
 | Moment | What happens |
 | --- | --- |
 | Load | scattered nebula dust assembles into the brain, stem-up, connections then light packets come online |
-| Idle | slow ambient auto-spin, breathing, particle float, pulsing connections, packets, bloom pulse; mini-brains glow inside with dependency traffic between them |
-| Drag | rotate the brain freely (with inertia and a little vertical tilt); the spin pauses while you hover a mini-brain and resumes after |
-| Hover a mini-brain | it brightens, label lights up |
-| Click a mini-brain | camera dives through the parent shell (which parts slightly and fades like a veil); the mini seamlessly becomes the new full-size brain |
-| Repeat | every level is another brain — depth is unlimited |
-| Esc / empty click / breadcrumb / Surface button | pulls back out one level (breadcrumb jumps multiple) |
+| Idle | slow ambient auto-spin, breathing, particle float, pulsing connections, packets, bloom pulse; mini-brains glow inside, wired with knowledge pathways |
+| Drag | rotate freely (inertia, slight tilt); spin pauses while hovering a mini |
+| **Scroll / pinch** | continuous zoom — dive toward the mini nearest your pointer, straight through the shell (it parts and fades like a veil) into the next level; scroll out to surface the same way. Fully scrubbable and bidirectional; momentum carries through multiple levels |
+| Click | **select** a brain or portal — its info card opens and its entire linkage lights up while everything unrelated recedes. Clicks never navigate |
+| Double-click | smooth auto-dive (same motion as scrolling) |
+| Connection rows / portals | click a connection in the card (or double-click a portal ring) to **travel the link**: the camera surfaces to the common ancestor, glides across, and dives into the destination with the far node selected |
+| Esc / breadcrumb / Surface | Esc clears selection, then surfaces; breadcrumb jumps any number of levels |
+
+## The knowledge graph
+
+`LINKS` in `src/data/portfolio.ts` connects ANY node to ANY node. The view
+layer projects it onto whatever level is on screen:
+
+- both ends visible → an aggregated glowing pathway (link count = intensity)
+- ends inside two different programs, seen from the portfolio → rolled up
+  into one program↔program pathway
+- one end outside the current brain → a **portal ring** on the inner shell,
+  pointing toward the destination branch, with travelling stub pathways
 
 ## How the infinite zoom works (scale-and-swap)
 
