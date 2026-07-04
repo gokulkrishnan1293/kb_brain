@@ -48,6 +48,9 @@ export const LINE_OPACITY = 0.16
 /** resting opacity of dependency pathways between mini-brains */
 export const DEP_OPACITY = 0.75
 
+/** ambient rotation speed, rad/s (~70s per revolution) */
+export const AUTO_SPIN = 0.09
+
 export const CAMERA = {
   fov: 42,
   idle: { pos: [0, 0.22, 3.1] as const, look: [0, 0.02, 0] as const },

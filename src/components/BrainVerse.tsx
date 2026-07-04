@@ -11,8 +11,9 @@ import {
   createSharedUniforms,
   createShellControls,
 } from '../three/uniforms'
-import { BRAIN_SIZE, QUALITY, SPLIT_DISTANCE, LINE_OPACITY, DEP_OPACITY } from '../config'
+import { BRAIN_SIZE, QUALITY, SPLIT_DISTANCE, LINE_OPACITY, DEP_OPACITY, AUTO_SPIN } from '../config'
 import { useNavStore } from '../state/useNavStore'
+import { brainPose } from '../state/brainPose'
 import { BrainShell, ShellBuffers } from './BrainShell'
 import { MiniBrain } from './MiniBrain'
 import { NodeCore } from './NodeCore'
@@ -186,10 +187,83 @@ export function BrainVerse() {
     prevDepth.current = path.length
   }, [path, rootCtl, shared, coreReveal, depOpacity])
 
-  /* ---- per-frame: clock, projection scale, idle sway & breathing ---- */
+  /* ---- drag-to-rotate + auto-spin ---- */
+  const gl = useThree((s) => s.gl)
+  const drag = useRef({
+    active: false,
+    lastX: 0,
+    lastY: 0,
+    lastT: 0,
+    vel: 0,
+  })
+
+  useEffect(() => {
+    const el = gl.domElement
+    const d = drag.current
+
+    const rotatable = () => {
+      const p = useNavStore.getState().phase
+      return p === 'idle' || p === 'forming'
+    }
+
+    const onDown = (e: PointerEvent) => {
+      if (!rotatable()) return
+      d.active = true
+      d.lastX = e.clientX
+      d.lastY = e.clientY
+      d.lastT = performance.now()
+      brainPose.lastDragTravel = 0
+      el.style.cursor = 'grabbing'
+    }
+    const onMove = (e: PointerEvent) => {
+      if (!d.active) return
+      const dx = e.clientX - d.lastX
+      const dy = e.clientY - d.lastY
+      d.lastX = e.clientX
+      d.lastY = e.clientY
+      brainPose.lastDragTravel += Math.abs(dx) + Math.abs(dy)
+
+      brainPose.euler.y += dx * 0.005
+      brainPose.euler.x = THREE.MathUtils.clamp(
+        brainPose.euler.x + dy * 0.003,
+        -0.38,
+        0.38,
+      )
+
+      // smoothed release velocity for inertia
+      const now = performance.now()
+      const dtMove = Math.max(now - d.lastT, 1) / 1000
+      d.lastT = now
+      d.vel = THREE.MathUtils.clamp(
+        d.vel * 0.7 + ((dx * 0.005) / dtMove) * 0.3,
+        -2.2,
+        2.2,
+      )
+    }
+    const onUp = () => {
+      d.active = false
+      el.style.cursor = rotatable() ? 'grab' : 'auto'
+    }
+
+    el.addEventListener('pointerdown', onDown)
+    window.addEventListener('pointermove', onMove)
+    window.addEventListener('pointerup', onUp)
+    return () => {
+      el.removeEventListener('pointerdown', onDown)
+      window.removeEventListener('pointermove', onMove)
+      window.removeEventListener('pointerup', onUp)
+    }
+  }, [gl])
+
+  /* cursor reflects what a press would do in the current phase */
+  useEffect(() => {
+    gl.domElement.style.cursor =
+      phase === 'idle' || phase === 'forming' ? 'grab' : 'auto'
+  }, [phase, gl])
+
+  /* ---- per-frame: clock, projection scale, spin & breathing ---- */
   const size = useThree((s) => s.size)
   const camera = useThree((s) => s.camera) as THREE.PerspectiveCamera
-  const gl = useThree((s) => s.gl)
 
   useFrame((state, dt) => {
     const t = state.clock.elapsedTime
@@ -200,20 +274,31 @@ export function BrainVerse() {
 
     const g = group.current
     if (!g) return
+    const d = drag.current
+
     if (phase === 'idle' || phase === 'forming') {
-      g.rotation.y = THREE.MathUtils.damp(
-        g.rotation.y,
-        Math.sin(t * 0.22) * THREE.MathUtils.degToRad(3),
-        2,
-        dt,
-      )
+      if (!d.active) {
+        // inertia decays into the ambient auto-spin; spin holds while a
+        // mini is hovered so it stays easy to click
+        const hovering = useNavStore.getState().hoveredChild !== null
+        const targetVel = hovering
+          ? 0
+          : AUTO_SPIN * (phase === 'forming' ? 0.35 : 1)
+        d.vel = THREE.MathUtils.damp(d.vel, targetVel, 1.1, dt)
+        brainPose.euler.y += d.vel * dt
+        // tilt eases back to level over a few seconds
+        brainPose.euler.x = THREE.MathUtils.damp(brainPose.euler.x, 0, 0.25, dt)
+      }
       const breath = 1 + Math.sin(t * 0.7) * 0.009
       g.scale.setScalar(THREE.MathUtils.damp(g.scale.x, breath, 2, dt))
     } else {
-      // settle to identity so the camera's scale-and-swap maths hold exactly
-      g.rotation.y = THREE.MathUtils.damp(g.rotation.y, 0, 6, dt)
+      // freeze the pose during dives — the camera maths accounts for the
+      // current rotation, so no snap-back is needed
+      d.vel = 0
       g.scale.setScalar(THREE.MathUtils.damp(g.scale.x, 1, 6, dt))
     }
+
+    g.rotation.copy(brainPose.euler)
   })
 
   const interactive = phase === 'idle'

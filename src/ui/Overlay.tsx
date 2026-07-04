@@ -36,8 +36,8 @@ export function Overlay() {
           ? 'Surfacing…'
           : current.children.length > 0
             ? depth === 0
-              ? 'Click a program brain to dive inside'
-              : 'Dive deeper — click a system, Esc to surface'
+              ? 'Drag to rotate — click a program brain to dive inside'
+              : 'Drag to rotate — click a system to dive, Esc to surface'
             : 'Innermost node — Esc or click empty space to surface'
 
   return (

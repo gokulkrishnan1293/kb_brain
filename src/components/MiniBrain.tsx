@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef } from 'react'
 import * as THREE from 'three'
 import gsap from 'gsap'
-import { useFrame } from '@react-three/fiber'
+import { useFrame, useThree } from '@react-three/fiber'
 import { Html } from '@react-three/drei'
 import { PortfolioNode } from '../data/portfolio'
 import { ChildLayout } from '../lib/layout'
@@ -42,7 +42,10 @@ export function MiniBrain({
   interactive,
 }: Props) {
   const group = useRef<THREE.Group>(null!)
+  const labelFade = useRef<HTMLDivElement>(null)
+  const worldPos = useMemo(() => new THREE.Vector3(), [])
   const bobAmp = useRef(0)
+  const gl = useThree((s) => s.gl)
   const dive = useNavStore((s) => s.dive)
   const setHoveredChild = useNavStore((s) => s.setHoveredChild)
   const hovered = useNavStore((s) => s.hoveredChild === node.id)
@@ -115,6 +118,14 @@ export function MiniBrain({
       layout.position[1] + Math.sin(t * 0.8 + index * 2.1) * 0.014 * bobAmp.current,
       layout.position[2],
     )
+
+    // as the brain rotates, labels of minis swinging behind it recede
+    if (labelFade.current) {
+      g.getWorldPosition(worldPos)
+      const depthFade =
+        0.15 + 0.85 * THREE.MathUtils.smoothstep(worldPos.z, -0.4, 0.1)
+      labelFade.current.style.opacity = String(depthFade)
+    }
   })
 
   const labelVisible = interactive && !dimmed
@@ -142,17 +153,20 @@ export function MiniBrain({
         raycast={interactive && !dimmed ? THREE.Mesh.prototype.raycast : () => null}
         onClick={(e) => {
           e.stopPropagation()
-          document.body.style.cursor = 'auto'
+          if (e.delta > 6) return // that was a drag, not a click
+          gl.domElement.style.cursor = 'auto'
           dive(node.id)
         }}
         onPointerOver={(e) => {
           e.stopPropagation()
           setHoveredChild(node.id)
-          document.body.style.cursor = 'pointer'
+          gl.domElement.style.cursor = 'pointer'
         }}
         onPointerOut={() => {
           setHoveredChild(null)
-          document.body.style.cursor = 'auto'
+          const p = useNavStore.getState().phase
+          gl.domElement.style.cursor =
+            p === 'idle' || p === 'forming' ? 'grab' : 'auto'
         }}
       >
         <sphereGeometry args={[1.05, 12, 12]} />
@@ -166,19 +180,21 @@ export function MiniBrain({
         style={{ pointerEvents: 'none' }}
         zIndexRange={[10, 0]}
       >
-        <div
-          className={`mini-label ${labelVisible ? 'visible' : ''} ${
-            hovered || target ? 'hot' : ''
-          }`}
-        >
-          <span className="mini-name" style={{ color: node.color }}>
-            {node.name}
-          </span>
-          <span className="mini-detail">
-            {node.children.length > 0
-              ? `${node.children.length} systems inside`
-              : node.detail}
-          </span>
+        <div ref={labelFade}>
+          <div
+            className={`mini-label ${labelVisible ? 'visible' : ''} ${
+              hovered || target ? 'hot' : ''
+            }`}
+          >
+            <span className="mini-name" style={{ color: node.color }}>
+              {node.name}
+            </span>
+            <span className="mini-detail">
+              {node.children.length > 0
+                ? `${node.children.length} systems inside`
+                : node.detail}
+            </span>
+          </div>
         </div>
       </Html>
     </group>
