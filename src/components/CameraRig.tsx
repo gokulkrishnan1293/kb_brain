@@ -6,6 +6,7 @@ import { CAMERA } from '../config'
 import { layoutChildren } from '../lib/layout'
 import { nodeByPath } from '../data/portfolio'
 import { useNavStore } from '../state/useNavStore'
+import { brainPose } from '../state/brainPose'
 
 const IDLE = {
   px: CAMERA.idle.pos[0],
@@ -43,20 +44,26 @@ export function CameraRig() {
   const look = useMemo(() => new THREE.Vector3(), [])
   const prevPhase = useRef(phase)
 
-  /** camera pose that frames child `id` of the current root exactly like idle frames a root */
+  /**
+   * Camera pose that frames child `id` exactly like idle frames a root.
+   * The brain group may be rotated (drag / auto-spin) — the group keeps
+   * that rotation through the swap, so the mapping between child space
+   * and world stays a pure translate+scale: rotate only the child's
+   * centre, never the idle offset.
+   */
   const childPose = (id: string) => {
     const node = nodeByPath(path)
     const i = node.children.findIndex((c) => c.id === id)
     const L = layoutChildren(node.children.length)[Math.max(i, 0)]
-    const [cx, cy, cz] = L.position
+    const c = new THREE.Vector3(...L.position).applyEuler(brainPose.euler)
     const s = L.scale
     return {
-      px: cx + IDLE.px * s,
-      py: cy + IDLE.py * s,
-      pz: cz + IDLE.pz * s,
-      tx: cx + IDLE.tx * s,
-      ty: cy + IDLE.ty * s,
-      tz: cz + IDLE.tz * s,
+      px: c.x + IDLE.px * s,
+      py: c.y + IDLE.py * s,
+      pz: c.z + IDLE.pz * s,
+      tx: c.x + IDLE.tx * s,
+      ty: c.y + IDLE.ty * s,
+      tz: c.z + IDLE.tz * s,
     }
   }
 

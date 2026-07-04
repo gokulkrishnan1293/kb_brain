@@ -21,7 +21,8 @@ npm run build    # production build in dist/
 | Moment | What happens |
 | --- | --- |
 | Load | scattered nebula dust assembles into the brain, stem-up, connections then light packets come online |
-| Idle | ±3° sway, breathing, particle float, pulsing connections, packets, bloom pulse; mini-brains glow inside with dependency traffic between them |
+| Idle | slow ambient auto-spin, breathing, particle float, pulsing connections, packets, bloom pulse; mini-brains glow inside with dependency traffic between them |
+| Drag | rotate the brain freely (with inertia and a little vertical tilt); the spin pauses while you hover a mini-brain and resumes after |
 | Hover a mini-brain | it brightens, label lights up |
 | Click a mini-brain | camera dives through the parent shell (which parts slightly and fades like a veil); the mini seamlessly becomes the new full-size brain |
 | Repeat | every level is another brain — depth is unlimited |
@@ -35,6 +36,11 @@ the idle pose, so the scene re-roots on the child and the camera snaps to the
 idle pose — visually seamless. Only two levels (current root + its children)
 ever render, so performance is flat at any depth, and floating-point
 precision never degrades.
+
+Rotation (drag / auto-spin) survives dives: the brain group keeps its
+rotation through the swap, which keeps the child→world mapping a pure
+translate+scale — the camera only needs the child's *centre* rotated when
+computing its flight target (`CameraRig.childPose`).
 
 All mini-brains share the root's GPU buffers: each one is a `BufferGeometry`
 referencing the **same attribute arrays** with a smaller `drawRange` —
