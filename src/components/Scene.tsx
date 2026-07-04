@@ -2,8 +2,8 @@ import { Suspense } from 'react'
 import { Canvas } from '@react-three/fiber'
 import { AdaptiveDpr } from '@react-three/drei'
 import { CAMERA, COLORS, QUALITY } from '../config'
-import { useBrainStore } from '../state/useBrainStore'
-import { BrainAssembly } from './BrainAssembly'
+import { useNavStore } from '../state/useNavStore'
+import { BrainVerse } from './BrainVerse'
 import { CameraRig } from './CameraRig'
 import { Effects } from './Effects'
 import { AmbientDust } from './AmbientDust'
@@ -22,18 +22,16 @@ export function Scene() {
         fov: CAMERA.fov,
         near: 0.05,
         far: 60,
-        position: [...CAMERA.idle.pos],
+        position: [...CAMERA.formingStart.pos],
       }}
       onPointerMissed={() => {
-        // click on empty space steps back one level
-        const { stage, leaveCluster, closeBrain } = useBrainStore.getState()
-        if (stage === 'cluster') leaveCluster()
-        else if (stage === 'open') closeBrain()
+        // click on empty space surfaces one level
+        useNavStore.getState().surface()
       }}
     >
       <color attach="background" args={[COLORS.background]} />
       <Suspense fallback={null}>
-        <BrainAssembly />
+        <BrainVerse />
       </Suspense>
       <AmbientDust />
       <CameraRig />
